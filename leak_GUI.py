@@ -1,3 +1,9 @@
+###################################################
+# Plane assembly leak GUI - M.Yucel 10/8/21       #
+# Watch serial output of pressure and temp sensors#
+# from the plane as leak setup. Display, plot and #
+# save sensor data.                               #
+################################################### 
 from PyQt5.QtCore import (Qt, QTime, QObject, QThread, pyqtSignal, pyqtSlot, QTimer, QMutex)
 from PyQt5.QtWidgets import (QGridLayout, QHBoxLayout, QLabel, QLineEdit,
 		QMessageBox, QPushButton, QTextEdit, QVBoxLayout, QWidget, QGroupBox,
@@ -92,42 +98,60 @@ class GUI(QWidget):
 				h = m.height
 
 		#set up Reference pressure & temp vs time plot
-		self.sc = MplCanvas(self, width=3, height=2.5, dpi=100)
+		self.scRef = MplCanvas(self, width=3, height=2.5, dpi=100)
 		self.refPressure = []
 		self.refTemp = []
 		self.time = []
-		self.data, = self.sc.axes.plot([], [],"g-")
-		self.dataTemp, = self.sc.axes2.plot([], [], "b-")
-		self.sc.axes.tick_params(axis='y', labelcolor='green')
-		self.sc.axes2.tick_params(axis='y', labelcolor='blue')
-		self.sc.axes.set_xlabel("time(s)")
-		self.sc.axes.set_ylabel("pressure(psia)",color='green')
-		self.sc.axes2.set_ylabel("temp(C)",color='blue')
+		self.data, = self.scRef.axes.plot([], [],"g-", label="Ref. pressure")
+		self.dataTemp, = self.scRef.axes2.plot([], [], "b-", label="Ref. temperature")
+		self.scRef.axes.tick_params(axis='y', labelcolor='green')
+		self.scRef.axes2.tick_params(axis='y', labelcolor='blue')
+		self.scRef.axes.set_xlabel("time(s)")
+		self.scRef.axes.set_ylabel("pressure(psia)",color='green')
+		self.scRef.axes2.set_ylabel("temp(C)",color='blue')
 
 		#set up diff pressure plot
-		self.sc2 = MplCanvas(self, width=3, height=2.5, dpi=100)
+		self.scP0 = MplCanvas(self, width=3, height=2.5, dpi=100)
+		self.scP1 = MplCanvas(self, width=3, height=2.5, dpi=100)
+		self.scP2 = MplCanvas(self, width=3, height=2.5, dpi=100)
+		self.scP3 = MplCanvas(self, width=3, height=2.5, dpi=100)
+		self.scP4 = MplCanvas(self, width=3, height=2.5, dpi=100)
+		self.scP5 = MplCanvas(self, width=3, height=2.5, dpi=100)
 		self.p0Pressure = []
 		self.p1Pressure = []
 		self.p2Pressure = []
 		self.p3Pressure = []
 		self.p4Pressure = []
 		self.p5Pressure = []
-		self.dataP0, = self.sc2.axes.plot([], [],"y-", label="Panel-0")
-		self.dataP1, = self.sc2.axes.plot([], [], "r-", label="Panel-1")
-		self.dataP2, = self.sc2.axes.plot([], [], "c-", label="Panel-2")
-		self.dataP3, = self.sc2.axes.plot([], [], "b-", label="Panel-3")
-		self.dataP4, = self.sc2.axes.plot([], [], "m-", label="Panel-4")
-		self.dataP5, = self.sc2.axes.plot([], [], "k-", label="Panel-5")
-		self.sc2.axes.set_xlabel("time(s)")
-		self.sc2.axes.set_ylabel("pressure(psid)")
-
-
+		self.dataP0, = self.scP0.axes.plot([], [],"y-", label="Panel-0")
+		self.dataP1, = self.scP1.axes.plot([], [], "r-", label="Panel-1")
+		self.dataP2, = self.scP2.axes.plot([], [], "c-", label="Panel-2")
+		self.dataP3, = self.scP3.axes.plot([], [], "b-", label="Panel-3")
+		self.dataP4, = self.scP4.axes.plot([], [], "m-", label="Panel-4")
+		self.dataP5, = self.scP5.axes.plot([], [], "k-", label="Panel-5")
+		self.scP0.axes.set_xlabel("time(s)")
+		self.scP0.axes.set_ylabel("diff. pressure(mbar)")
+		self.scP1.axes.set_xlabel("time(s)")
+		self.scP1.axes.set_ylabel("diff. pressure(mbar)")
+		self.scP2.axes.set_xlabel("time(s)")
+		self.scP2.axes.set_ylabel("diff. pressure(mbar)")
+		self.scP3.axes.set_xlabel("time(s)")
+		self.scP3.axes.set_ylabel("diff. pressure(mbar)")
+		self.scP4.axes.set_xlabel("time(s)")
+		self.scP4.axes.set_ylabel("diff. pressure(mbar)")
+		self.scP5.axes.set_xlabel("time(s)")
+		self.scP5.axes.set_ylabel("diff. pressure(mbar)")
 		#Little toolbar
-		self.toolbar = NavigationToolbar(self.sc, self)
+		self.toolbar = NavigationToolbar(self.scRef, self)
 		# Widget for displaying the log.
-		self.display = QTextEdit()
-		self.display.setFontPointSize(16)
-		self.display.setReadOnly(True)
+		fs = 16
+		self.displayRef = QLabel()
+		self.displayP0 = QLabel()
+		self.displayP1 = QLabel()
+		self.displayP2 = QLabel()
+		self.displayP3 = QLabel()
+		self.displayP4 = QLabel()
+		self.displayP5 = QLabel()
 		self.startButton = QPushButton("Start Taking Data")
 		self.stopButton = QPushButton("Stop Taking Data")
 
@@ -140,11 +164,22 @@ class GUI(QWidget):
 
 		# The main layout is a grid (currently 2x2) with the various QGroupBoxes
 		mainLayout = QGridLayout()
-		mainLayout.addWidget(self.sc,0,3,2,2)
-		mainLayout.addWidget(self.sc2,0,1,2,2)
+		mainLayout.addWidget(self.scRef,0,2,1,3)
+		mainLayout.addWidget(self.displayRef,2,2,1,3,alignment=Qt.AlignCenter)
+		mainLayout.addWidget(self.scP0,3,0,2,2)
+		mainLayout.addWidget(self.scP1,3,2,2,2)
+		mainLayout.addWidget(self.scP2,3,4,2,2)
+		mainLayout.addWidget(self.displayP0,5,0,1,2,alignment=Qt.AlignCenter)
+		mainLayout.addWidget(self.displayP1,5,2,1,2,alignment=Qt.AlignCenter)
+		mainLayout.addWidget(self.displayP2,5,4,1,2,alignment=Qt.AlignCenter)
+		mainLayout.addWidget(self.scP3,6,0,2,2)
+		mainLayout.addWidget(self.scP4,6,2,2,2)
+		mainLayout.addWidget(self.scP5,6,4,2,2)
+		mainLayout.addWidget(self.displayP3,8,0,1,2,alignment=Qt.AlignCenter)
+		mainLayout.addWidget(self.displayP4,8,2,1,2,alignment=Qt.AlignCenter)
+		mainLayout.addWidget(self.displayP5,8,4,1,2,alignment=Qt.AlignCenter)
 		mainLayout.addWidget(self.startButton,0,0,alignment=Qt.AlignCenter)
-		mainLayout.addWidget(self.stopButton,1,0,alignment=Qt.AlignCenter)
-		mainLayout.addWidget(self.display,2,0,4,5)
+		mainLayout.addWidget(self.stopButton,0,1,alignment=Qt.AlignCenter)
 
 		self.qTimer = QTimer()
 		self.qTimer.setInterval(1000) # 1000 ms = 1 s
@@ -167,7 +202,13 @@ class GUI(QWidget):
 				return
 			if(fields == 10):
 				#print(ss)
-				self.display.append(ss)
+				self.displayP0.setText(str(row[2]))
+				self.displayP1.setText(str(row[3]))
+				self.displayP2.setText(str(row[4]))
+				self.displayP3.setText(str(row[5]))
+				self.displayP4.setText(str(row[6]))
+				self.displayP5.setText(str(row[7]))
+				self.displayRef.setText(str(row[8]+"\t"+ row[9]))
 				self.p0Pressure.append(float(str(row[2])))
 				self.p1Pressure.append(float(str(row[3])))
 				self.p2Pressure.append(float(str(row[4])))
@@ -195,11 +236,21 @@ class GUI(QWidget):
 				self.dataP3.set_xdata(xaxis)
 				self.dataP4.set_xdata(xaxis)
 				self.dataP5.set_xdata(xaxis)
-			self.sc.axes.set_ylim([min(self.refPressure)-1.,max(self.refPressure)+1.])
-			self.sc.axes.set_xlim([0.,len(self.refPressure)+1.])
-			self.sc.axes2.set_ylim([18,22])
-			self.sc2.axes.set_ylim([min(self.p0Pressure)-2.,max(self.p0Pressure)+2.])
-			self.sc2.axes.set_xlim([0.,len(self.p0Pressure)+1.])
+			self.scRef.axes.set_ylim([min(self.refPressure)-1.,max(self.refPressure)+1.])
+			self.scRef.axes.set_xlim([0.,len(self.refPressure)+1.])
+			self.scRef.axes2.set_ylim([18,22])
+			self.scP0.axes.set_ylim([min(self.p0Pressure)-2.,max(self.p0Pressure)+2.])
+			self.scP0.axes.set_xlim([0.,len(self.p0Pressure)+1.])
+			self.scP1.axes.set_ylim([min(self.p1Pressure)-2.,max(self.p1Pressure)+2.])
+			self.scP1.axes.set_xlim([0.,len(self.p1Pressure)+1.])
+			self.scP2.axes.set_ylim([min(self.p2Pressure)-2.,max(self.p2Pressure)+2.])
+			self.scP2.axes.set_xlim([0.,len(self.p2Pressure)+1.])
+			self.scP3.axes.set_ylim([min(self.p3Pressure)-2.,max(self.p3Pressure)+2.])
+			self.scP3.axes.set_xlim([0.,len(self.p3Pressure)+1.])
+			self.scP4.axes.set_ylim([min(self.p4Pressure)-2.,max(self.p4Pressure)+2.])
+			self.scP4.axes.set_xlim([0.,len(self.p4Pressure)+1.])
+			self.scP5.axes.set_ylim([min(self.p5Pressure)-2.,max(self.p5Pressure)+2.])
+			self.scP5.axes.set_xlim([0.,len(self.p5Pressure)+1.])
 			self.data.set_ydata(self.refPressure)
 			self.dataTemp.set_ydata(self.refTemp)
 			self.dataP0.set_ydata(self.p0Pressure)
@@ -208,13 +259,33 @@ class GUI(QWidget):
 			self.dataP3.set_ydata(self.p3Pressure)
 			self.dataP4.set_ydata(self.p4Pressure)
 			self.dataP5.set_ydata(self.p5Pressure)
-			self.sc2.axes.legend(loc="upper right")
-			self.sc.fig.tight_layout()
-			self.sc.fig.canvas.draw()
-			self.sc.fig.canvas.flush_events()
-			self.sc2.fig.tight_layout()
-			self.sc2.fig.canvas.draw()
-			self.sc2.fig.canvas.flush_events()
+			self.scP0.axes.legend(loc="upper right")
+			self.scP1.axes.legend(loc="upper right")
+			self.scP2.axes.legend(loc="upper right")
+			self.scP3.axes.legend(loc="upper right")
+			self.scP4.axes.legend(loc="upper right")
+			self.scP5.axes.legend(loc="upper right")
+			self.scRef.fig.tight_layout()
+			self.scRef.fig.canvas.draw()
+			self.scRef.fig.canvas.flush_events()
+			self.scP0.fig.tight_layout()
+			self.scP0.fig.canvas.draw()
+			self.scP0.fig.canvas.flush_events()
+			self.scP1.fig.tight_layout()
+			self.scP1.fig.canvas.draw()
+			self.scP1.fig.canvas.flush_events()
+			self.scP2.fig.tight_layout()
+			self.scP2.fig.canvas.draw()
+			self.scP2.fig.canvas.flush_events()
+			self.scP3.fig.tight_layout()
+			self.scP3.fig.canvas.draw()
+			self.scP3.fig.canvas.flush_events()
+			self.scP4.fig.tight_layout()
+			self.scP4.fig.canvas.draw()
+			self.scP4.fig.canvas.flush_events()
+			self.scP5.fig.tight_layout()
+			self.scP5.fig.canvas.draw()
+			self.scP5.fig.canvas.flush_events()
 
 	def setFileName(self):
 		fn = self.PopupWindow.fileName.text() + str(".txt")
